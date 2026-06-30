@@ -7,7 +7,7 @@ import google.api_core.exceptions
 # --- 1. CẤU HÌNH BẢO MẬT API KEY ---
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    model = genai.GenerativeModel("gemini-1.5-flash")
+    model = genai.GenerativeModel("gemini-3.0-flash")
 except Exception:
     st.error("Chưa cấu hình API Key trong mục Secrets của Streamlit Cloud!")
 
