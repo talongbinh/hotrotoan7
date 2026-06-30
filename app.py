@@ -7,7 +7,7 @@ import google.api_core.exceptions
 # --- 1. CẤU HÌNH BẢO MẬT API KEY ---
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    model = genai.GenerativeModel("gemini-3.0-flash")
+    model = genai.GenerativeModel("gemini-1.5-flash")
 except Exception:
     st.error("Chưa cấu hình API Key trong mục Secrets của Streamlit Cloud!")
 
@@ -33,7 +33,7 @@ if st.session_state.current_step == "CHAO_HOI":
     st.session_state.messages = [{"role": "assistant", "content": welcome_text}]
     st.session_state.current_step = "CHO_HOC_SINH_CHON_BAI"
 
-# Hiển thị lịch sử trò chuyện
+# Hiển thị lịch sử trò chuyện (Luôn hiển thị ở mọi bước)
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
@@ -56,7 +56,6 @@ elif st.session_state.current_step == "CHO_HOC_SINH_CHON_HUONG_GIAI":
     with col1:
         if st.button("📖 Gợi ý từng bước"):
             st.session_state.messages.append({"role": "user", "content": "Gợi ý từng bước"})
-            # Chuyển trạng thái để xuống dưới gọi AI (Không gọi AI trực tiếp trong button)
             st.session_state.current_step = "KICH_HOAT_GOI_Y_DAU_TIEN"
             st.rerun()
             
@@ -108,16 +107,21 @@ elif st.session_state.current_step == "KICH_HOAT_GOI_Y_DAU_TIEN":
             st.rerun()
         except google.api_core.exceptions.ResourceExhausted:
             st.error("Hệ thống AI đang nhận quá nhiều yêu cầu cùng lúc. Em vui lòng chờ 1 phút rồi gõ tin nhắn bất kỳ để kích hoạt lại nhé!")
+            # THÊM Ô CHAT ĐỂ KÍCH HOẠT LẠI KHI LỖI HẠN MỨC
+            if user_input := st.chat_input("Gõ chữ bất kỳ để thử lại..."):
+                st.rerun()
         except Exception:
             st.error("Thầy gặp chút gián đoạn nhỏ, em thử gõ gì đó để kích hoạt lại nhé!")
+            if user_input := st.chat_input("Gõ chữ bất kỳ để thử lại..."):
+                st.rerun()
 
-# --- BƯỚC 4: TIẾN TRÌNH THẢO LUẬN, GỢI Ý TIẾP THEO ---
+# --- BƯỚC 4: TIẾN TRÌNH THẢO LUẬN, GỢI Ý TIẾP THEO (ĐÃ ĐƯỢC GIỮ Ô CHAT BỀN VỮNG) ---
 elif st.session_state.current_step == "DANG_GOI_Y":
     if user_input := st.chat_input("Nhập câu trả lời hoặc thắc mắc của em..."):
         st.session_state.messages.append({"role": "user", "content": user_input})
         
         if "xong" in user_input.lower() or "hoàn thành" in user_input.lower():
-            feedback = "Tuyệt vời! Em làm tốt lắm. Hãy bấm nút Tải lại trang hoặc gõ tiếp tên bài mới để hỏi nhé!"
+            feedback = "Tuyệt vời! Em làm tốt lắm. Hãy chuẩn bị sang bài tập tiếp theo nhé!"
             st.session_state.messages.append({"role": "assistant", "content": feedback})
             st.session_state.current_step = "CHAO_HOI"
             st.session_state.selected_lesson = None
@@ -130,5 +134,3 @@ elif st.session_state.current_step == "DANG_GOI_Y":
                 st.rerun()
             except google.api_core.exceptions.ResourceExhausted:
                 st.error("Hệ thống AI đang quá tải một chút. Em vui lòng chờ 1 phút rồi gõ lại nhé!")
-            except Exception:
-                st.error("Hệ thống gặp gián đoạn nhỏ, em thử gõ lại câu trả lời nhé!")
