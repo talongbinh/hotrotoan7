@@ -7,7 +7,7 @@ import google.api_core.exceptions
 # --- 1. CẤU HÌNH BẢO MẬT API KEY ---
 try:
     genai.configure(api_key=st.secrets["GOOGLE_API_KEY"])
-    model = genai.GenerativeModel("gemini-3.5-flash")
+    model = genai.GenerativeModel("gemini-1.5-flash")
 except Exception:
     st.error("Chưa cấu hình API Key trong mục Secrets của Streamlit Cloud!")
 
@@ -30,7 +30,7 @@ SYSTEM_PROMPT = (
 # --- BƯỚC 1: CHÀO HỎI TỰ ĐỘNG ---
 if st.session_state.current_step == "CHAO_HOI":
     welcome_text = "Chào em, thầy là trợ lý của thầy Long Bình. Hôm nay em cần thầy hỗ trợ bài tập nào? (Ví dụ nhập: bài 1, bài 2,...)"
-    st.session_state.messages.append({"role": "assistant", "content": welcome_text})
+    st.session_state.messages = [{"role": "assistant", "content": welcome_text}]
     st.session_state.current_step = "CHO_HOC_SINH_CHON_BAI"
 
 # Hiển thị lịch sử trò chuyện
@@ -56,18 +56,8 @@ elif st.session_state.current_step == "CHO_HOC_SINH_CHON_HUONG_GIAI":
     with col1:
         if st.button("📖 Gợi ý từng bước"):
             st.session_state.messages.append({"role": "user", "content": "Gợi ý từng bước"})
-            
-            # GỌI AI ĐỂ ĐƯA RA CÂU GỢI Ý ĐẦU TIÊN LUÔN, KHÔNG BẮT HỌC SINH CHỜ
-            prompt = f"{SYSTEM_PROMPT}\nHọc sinh đang làm bài: {st.session_state.selected_lesson}. Hãy đưa ra câu hỏi gợi mở hoặc gợi ý bước 1 để hướng dẫn học sinh."
-            try:
-                response = model.generate_content(prompt).text
-                st.session_state.messages.append({"role": "assistant", "content": response})
-            except google.api_core.exceptions.ResourceExhausted:
-                st.session_state.messages.append({"role": "assistant", "content": "Hệ thống AI đang nhận quá nhiều yêu cầu cùng lúc. Em vui lòng chờ 1 phút nhé!"})
-            except Exception:
-                st.session_state.messages.append({"role": "assistant", "content": "Thầy gặp chút gián đoạn nhỏ, em bấm lại nút nhé!"})
-                
-            st.session_state.current_step = "DANG_GOI_Y"
+            # Chuyển trạng thái để xuống dưới gọi AI (Không gọi AI trực tiếp trong button)
+            st.session_state.current_step = "KICH_HOAT_GOI_Y_DAU_TIEN"
             st.rerun()
             
     with col2:
@@ -92,12 +82,11 @@ elif st.session_state.current_step == "CHO_HOC_SINH_CHON_HUONG_GIAI":
                     st.image(Image.open(filename), caption=f"Đáp án chính xác cho bài {lesson.upper()}")
                 st.session_state.messages.append({"role": "assistant", "content": f"[Đã hiển thị ảnh đáp án bài {lesson}]"})
             else:
-                # KIỂM TRA THƯ MỤC NẾU KHÔNG THẤY FILE
                 if not os.path.exists("images"):
                     err_msg = "LỖI: Ứng dụng không tìm thấy thư mục tên là 'images' trên GitHub của thầy."
                 else:
                     files_in_folder = os.listdir("images")
-                    err_msg = f"Thầy chưa tìm thấy file '{lesson}.jpg' (hoặc .png) trong thư mục 'images'. Hiện trong thư mục này chỉ có: {files_in_folder}"
+                    err_msg = f"Thầy chưa tìm thấy file '{lesson}.jpg' trong thư mục 'images'. Hiện trong thư mục này chỉ có: {files_in_folder}"
                 
                 with st.chat_message("assistant"):
                     st.error(err_msg)
@@ -108,13 +97,27 @@ elif st.session_state.current_step == "CHO_HOC_SINH_CHON_HUONG_GIAI":
             st.session_state.selected_lesson = None
             st.button("Hỏi bài tập khác 🔄")
 
+# --- BƯỚC EXTRA: KÍCH HOẠT CÂU GỢI Ý ĐẦU TIÊN TỪ AI ---
+elif st.session_state.current_step == "KICH_HOAT_GOI_Y_DAU_TIEN":
+    with st.spinner("Thầy đang suy nghĩ câu gợi ý..."):
+        prompt = f"{SYSTEM_PROMPT}\nHọc sinh đang làm bài: {st.session_state.selected_lesson}. Hãy đưa ra câu hỏi gợi mở hoặc gợi ý bước 1 để hướng dẫn học sinh."
+        try:
+            response = model.generate_content(prompt).text
+            st.session_state.messages.append({"role": "assistant", "content": response})
+            st.session_state.current_step = "DANG_GOI_Y"
+            st.rerun()
+        except google.api_core.exceptions.ResourceExhausted:
+            st.error("Hệ thống AI đang nhận quá nhiều yêu cầu cùng lúc. Em vui lòng chờ 1 phút rồi gõ tin nhắn bất kỳ để kích hoạt lại nhé!")
+        except Exception:
+            st.error("Thầy gặp chút gián đoạn nhỏ, em thử gõ gì đó để kích hoạt lại nhé!")
+
 # --- BƯỚC 4: TIẾN TRÌNH THẢO LUẬN, GỢI Ý TIẾP THEO ---
 elif st.session_state.current_step == "DANG_GOI_Y":
     if user_input := st.chat_input("Nhập câu trả lời hoặc thắc mắc của em..."):
         st.session_state.messages.append({"role": "user", "content": user_input})
         
         if "xong" in user_input.lower() or "hoàn thành" in user_input.lower():
-            feedback = "Tuyệt vời! Em làm tốt lắm. Hãy chuẩn bị sang bài tập tiếp theo nhé!"
+            feedback = "Tuyệt vời! Em làm tốt lắm. Hãy bấm nút Tải lại trang hoặc gõ tiếp tên bài mới để hỏi nhé!"
             st.session_state.messages.append({"role": "assistant", "content": feedback})
             st.session_state.current_step = "CHAO_HOI"
             st.session_state.selected_lesson = None
