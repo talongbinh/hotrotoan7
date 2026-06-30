@@ -56,14 +56,25 @@ elif st.session_state.current_step == "CHO_HOC_SINH_CHON_HUONG_GIAI":
     with col1:
         if st.button("📖 Gợi ý từng bước"):
             st.session_state.messages.append({"role": "user", "content": "Gợi ý từng bước"})
-            st.session_state.current_step = "BAT_DAU_GOI_Y"
+            
+            # GỌI AI ĐỂ ĐƯA RA CÂU GỢI Ý ĐẦU TIÊN LUÔN, KHÔNG BẮT HỌC SINH CHỜ
+            prompt = f"{SYSTEM_PROMPT}\nHọc sinh đang làm bài: {st.session_state.selected_lesson}. Hãy đưa ra câu hỏi gợi mở hoặc gợi ý bước 1 để hướng dẫn học sinh."
+            try:
+                response = model.generate_content(prompt).text
+                st.session_state.messages.append({"role": "assistant", "content": response})
+            except google.api_core.exceptions.ResourceExhausted:
+                st.session_state.messages.append({"role": "assistant", "content": "Hệ thống AI đang nhận quá nhiều yêu cầu cùng lúc. Em vui lòng chờ 1 phút nhé!"})
+            except Exception:
+                st.session_state.messages.append({"role": "assistant", "content": "Thầy gặp chút gián đoạn nhỏ, em bấm lại nút nhé!"})
+                
+            st.session_state.current_step = "DANG_GOI_Y"
             st.rerun()
             
     with col2:
         if st.button("🎯 Xem đáp án cụ thể"):
             st.session_state.messages.append({"role": "user", "content": "Xem đáp án cụ thể"})
             
-            # DANH SÁCH KIỂM TRA MỌI ĐUÔI FILE (Chấp nhận cả JPG của thầy)
+            # Quét tìm mọi đuôi file ảnh trong folder images
             lesson = st.session_state.selected_lesson
             possible_files = [
                 f"images/{lesson}.jpg", f"images/{lesson}.png", 
@@ -77,37 +88,44 @@ elif st.session_state.current_step == "CHO_HOC_SINH_CHON_HUONG_GIAI":
                     break
             
             if filename:
-                # Hiển thị đúng 1 ảnh đáp án tìm được
                 with st.chat_message("assistant"):
                     st.image(Image.open(filename), caption=f"Đáp án chính xác cho bài {lesson.upper()}")
                 st.session_state.messages.append({"role": "assistant", "content": f"[Đã hiển thị ảnh đáp án bài {lesson}]"})
             else:
+                # KIỂM TRA THƯ MỤC NẾU KHÔNG THẤY FILE
+                if not os.path.exists("images"):
+                    err_msg = "LỖI: Ứng dụng không tìm thấy thư mục tên là 'images' trên GitHub của thầy."
+                else:
+                    files_in_folder = os.listdir("images")
+                    err_msg = f"Thầy chưa tìm thấy file '{lesson}.jpg' (hoặc .png) trong thư mục 'images'. Hiện trong thư mục này chỉ có: {files_in_folder}"
+                
                 with st.chat_message("assistant"):
-                    st.error(f"Thầy chưa tìm thấy file ảnh đáp án của bài này. Em lưu ý tên file trên GitHub phải đặt đúng là '{lesson}.jpg' nằm trong thư mục 'images' nhé!")
+                    st.error(err_msg)
+                st.session_state.messages.append({"role": "assistant", "content": err_msg})
             
-            # Hoàn thành chu trình, reset quay lại từ đầu để hỏi bài mới
+            # Hoàn thành chu trình đáp án, reset về ban đầu
             st.session_state.current_step = "CHAO_HOI"
             st.session_state.selected_lesson = None
             st.button("Hỏi bài tập khác 🔄")
 
-# --- BƯỚC 4: TIẾN TRÌNH GỢI Ý TOÁN HỌC (CÓ BỌC LÓT CHỐNG SẬP) ---
-elif st.session_state.current_step == "BAT_DAU_GOI_Y":
+# --- BƯỚC 4: TIẾN TRÌNH THẢO LUẬN, GỢI Ý TIẾP THEO ---
+elif st.session_state.current_step == "DANG_GOI_Y":
     if user_input := st.chat_input("Nhập câu trả lời hoặc thắc mắc của em..."):
         st.session_state.messages.append({"role": "user", "content": user_input})
         
         if "xong" in user_input.lower() or "hoàn thành" in user_input.lower():
-            feedback = "Tuyệt vời! Em làm tốt lắm. Hãy bấm nút Tải lại trang hoặc gõ tiếp tên bài mới để hỏi nhé!"
+            feedback = "Tuyệt vời! Em làm tốt lắm. Hãy chuẩn bị sang bài tập tiếp theo nhé!"
             st.session_state.messages.append({"role": "assistant", "content": feedback})
             st.session_state.current_step = "CHAO_HOI"
             st.session_state.selected_lesson = None
             st.rerun()
         else:
-            prompt = f"{SYSTEM_PROMPT}\nHọc sinh đang hỏi bài: {st.session_state.selected_lesson}. Học sinh nói: {user_input}. Hãy đưa ra gợi ý tiếp theo."
+            prompt = f"{SYSTEM_PROMPT}\nHọc sinh đang thảo luận bài: {st.session_state.selected_lesson}. Học sinh phản hồi: {user_input}. Hãy tiếp tục dẫn dắt bằng câu hỏi gợi mở bước tiếp theo."
             try:
                 response = model.generate_content(prompt).text
                 st.session_state.messages.append({"role": "assistant", "content": response})
                 st.rerun()
             except google.api_core.exceptions.ResourceExhausted:
-                st.error("Hệ thống AI đang nhận quá nhiều yêu cầu cùng lúc. Em vui lòng chờ 1 phút rồi gõ lại câu hỏi nhé!")
-            except Exception as e:
-                st.error("Hệ thống gặp gián đoạn nhỏ, em thử gõ lại nhé!")
+                st.error("Hệ thống AI đang quá tải một chút. Em vui lòng chờ 1 phút rồi gõ lại nhé!")
+            except Exception:
+                st.error("Hệ thống gặp gián đoạn nhỏ, em thử gõ lại câu trả lời nhé!")
