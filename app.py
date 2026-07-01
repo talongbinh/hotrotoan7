@@ -22,10 +22,23 @@ if "selected_lesson" not in st.session_state:
     st.session_state.selected_lesson = None
 
 SYSTEM_PROMPT = (
-    "Bạn là trợ lý học tập của thầy Long Bình tại trường THCS Hoàng Văn Thụ. "
-    "Nhiệm vụ của bạn là dùng ngôn ngữ sư phạm để GỢI Ý từng bước giải "
-    "phương pháp, tuyệt đối KHÔNG ĐƯỢC giải hết bài hay đưa thẳng đáp án chữ."
+    "Bạn là trợ lý học tập môn Toán và Khoa học tự nhiên của thầy Long Bình tại trường THCS Hoàng Văn Thụ. "
+    "Nhiệm vụ của bạn là đóng vai một giáo viên sư phạm chuẩn mực. Khi được cung cấp hình ảnh bài toán, "
+    "hãy phân tích kỹ đề bài và hình vẽ trong ảnh để hướng dẫn học sinh giải theo từng bước nhỏ. "
+    "TỪNG BƯỚC MỘT: Chỉ gợi ý hoặc đặt câu hỏi mở cho bước đầu tiên, chờ học sinh trả lời rồi mới nhận xét và hướng dẫn tiếp. "
+    "TUYỆT ĐỐI KHÔNG ĐƯỢC giải hết toàn bộ bài, không đưa thẳng đáp án chữ ngay từ đầu."
 )
+
+# Hàm tìm đường dẫn ảnh dựa vào tên bài
+def find_image_path(lesson):
+    possible_files = [
+        f"images/{lesson}.jpg", f"images/{lesson}.png", 
+        f"images/{lesson}.jpeg", f"images/{lesson}.JPG", f"images/{lesson}.PNG"
+    ]
+    for f_path in possible_files:
+        if os.path.exists(f_path):
+            return f_path
+    return None
 
 # --- BƯỚC 1: CHÀO HỎI TỰ ĐỘNG ---
 if st.session_state.current_step == "CHAO_HOI":
@@ -33,7 +46,7 @@ if st.session_state.current_step == "CHAO_HOI":
     st.session_state.messages = [{"role": "assistant", "content": welcome_text}]
     st.session_state.current_step = "CHO_HOC_SINH_CHON_BAI"
 
-# Hiển thị lịch sử trò chuyện (Luôn hiển thị ở mọi bước)
+# Hiển thị lịch sử trò chuyện
 for msg in st.session_state.messages:
     with st.chat_message(msg["role"]):
         st.write(msg["content"])
@@ -63,51 +76,50 @@ elif st.session_state.current_step == "CHO_HOC_SINH_CHON_HUONG_GIAI":
         if st.button("🎯 Xem đáp án cụ thể"):
             st.session_state.messages.append({"role": "user", "content": "Xem đáp án cụ thể"})
             
-            # Quét tìm mọi đuôi file ảnh trong folder images
-            lesson = st.session_state.selected_lesson
-            possible_files = [
-                f"images/{lesson}.jpg", f"images/{lesson}.png", 
-                f"images/{lesson}.jpeg", f"images/{lesson}.JPG", f"images/{lesson}.PNG"
-            ]
-            
-            filename = None
-            for f_path in possible_files:
-                if os.path.exists(f_path):
-                    filename = f_path
-                    break
-            
-            if filename:
+            img_path = find_image_path(st.session_state.selected_lesson)
+            if img_path:
                 with st.chat_message("assistant"):
-                    st.image(Image.open(filename), caption=f"Đáp án chính xác cho bài {lesson.upper()}")
-                st.session_state.messages.append({"role": "assistant", "content": f"[Đã hiển thị ảnh đáp án bài {lesson}]"})
+                    st.image(Image.open(img_path), caption=f"Đáp án chính xác cho bài {st.session_state.selected_lesson.upper()}")
+                st.session_state.messages.append({"role": "assistant", "content": f"[Đã hiển thị ảnh đáp án bài {st.session_state.selected_lesson}]"})
             else:
-                if not os.path.exists("images"):
-                    err_msg = "LỖI: Ứng dụng không tìm thấy thư mục tên là 'images' trên GitHub của thầy."
-                else:
-                    files_in_folder = os.listdir("images")
-                    err_msg = f"Thầy chưa tìm thấy file '{lesson}.jpg' trong thư mục 'images'. Hiện trong thư mục này chỉ có: {files_in_folder}"
-                
+                err_msg = f"Thầy chưa tìm thấy file ảnh '{st.session_state.selected_lesson}.jpg' trong thư mục 'images'."
                 with st.chat_message("assistant"):
                     st.error(err_msg)
                 st.session_state.messages.append({"role": "assistant", "content": err_msg})
             
-            # Hoàn thành chu trình đáp án, reset về ban đầu
             st.session_state.current_step = "CHAO_HOI"
             st.session_state.selected_lesson = None
             st.button("Hỏi bài tập khác 🔄")
 
-# --- BƯỚC EXTRA: KÍCH HOẠT CÂU GỢI Ý ĐẦU TIÊN TỪ AI ---
+# --- BƯỚC EXTRA: AI TỰ ĐỌC ẢNH VÀ ĐƯA RA CÂU GỢI Ý ĐẦU TIÊN ---
 elif st.session_state.current_step == "KICH_HOAT_GOI_Y_DAU_TIEN":
-    with st.spinner("Thầy đang suy nghĩ câu gợi ý..."):
-        prompt = f"{SYSTEM_PROMPT}\nHọc sinh đang làm bài: {st.session_state.selected_lesson}. Hãy đưa ra câu hỏi gợi mở hoặc gợi ý bước 1 để hướng dẫn học sinh."
+    with st.spinner("Thầy đang nhìn hình vẽ và đọc đề bài để đưa ra gợi ý..."):
+        lesson_key = st.session_state.selected_lesson
+        img_path = find_image_path(lesson_key)
+        
+        # Chuẩn bị nội dung gửi đi cho AI
+        prompt_content = [
+            f"{SYSTEM_PROMPT}\n"
+            f"Học sinh đang yêu cầu hướng dẫn làm bài: {lesson_key.upper()}.\n"
+            f"Nhiệm vụ: Hãy nhìn kỹ hình ảnh đính kèm, phân tích câu hỏi trong ảnh và đưa ra câu hỏi gợi mở bước 1."
+        ]
+        
+        # Nếu tìm thấy file ảnh tương ứng trong thư mục, đính kèm vào cho AI đọc luôn
+        if img_path:
+            try:
+                img_data = Image.open(img_path)
+                prompt_content.append(img_data)
+            except Exception:
+                pass
+
         try:
-            response = model.generate_content(prompt).text
+            # Truyền mảng chứa cả chữ và ảnh vào hàm generate_content
+            response = model.generate_content(prompt_content).text
             st.session_state.messages.append({"role": "assistant", "content": response})
             st.session_state.current_step = "DANG_GOI_Y"
             st.rerun()
         except google.api_core.exceptions.ResourceExhausted:
-            st.error("Hệ thống AI đang nhận quá nhiều yêu cầu cùng lúc. Em vui lòng chờ 1 phút rồi gõ tin nhắn bất kỳ để kích hoạt lại nhé!")
-            # THÊM Ô CHAT ĐỂ KÍCH HOẠT LẠI KHI LỖI HẠN MỨC
+            st.error("Hệ thống AI đang nhận quá nhiều yêu cầu cùng lúc. Em vui lòng chờ 1 phút rồi gõ tin nhắn bất kỳ nhé!")
             if user_input := st.chat_input("Gõ chữ bất kỳ để thử lại..."):
                 st.rerun()
         except Exception:
@@ -115,7 +127,7 @@ elif st.session_state.current_step == "KICH_HOAT_GOI_Y_DAU_TIEN":
             if user_input := st.chat_input("Gõ chữ bất kỳ để thử lại..."):
                 st.rerun()
 
-# --- BƯỚC 4: TIẾN TRÌNH THẢO LUẬN, GỢI Ý TIẾP THEO (ĐÃ ĐƯỢC GIỮ Ô CHAT BỀN VỮNG) ---
+# --- BƯỚC 4: TIẾN TRÌNH THẢO LUẬN, GỢI Ý TIẾP THEO ---
 elif st.session_state.current_step == "DANG_GOI_Y":
     if user_input := st.chat_input("Nhập câu trả lời hoặc thắc mắc của em..."):
         st.session_state.messages.append({"role": "user", "content": user_input})
@@ -127,10 +139,28 @@ elif st.session_state.current_step == "DANG_GOI_Y":
             st.session_state.selected_lesson = None
             st.rerun()
         else:
-            prompt = f"{SYSTEM_PROMPT}\nHọc sinh đang thảo luận bài: {st.session_state.selected_lesson}. Học sinh phản hồi: {user_input}. Hãy tiếp tục dẫn dắt bằng câu hỏi gợi mở bước tiếp theo."
+            lesson_key = st.session_state.selected_lesson
+            img_path = find_image_path(lesson_key)
+            
+            # Giữ ngữ cảnh ảnh xuyên suốt cuộc hội thoại
+            prompt_content = [
+                f"{SYSTEM_PROMPT}\n"
+                f"Học sinh đang giải bài toán trong ảnh này.\n"
+                f"Học sinh phản hồi: {user_input}.\n"
+                f"Nhiệm vụ: Dựa vào hình ảnh bài toán và câu trả lời của học sinh, hãy đưa ra nhận xét ngắn gọn và gợi ý bước tiếp theo."
+            ]
+            
+            if img_path:
+                try:
+                    prompt_content.append(Image.open(img_path))
+                except Exception:
+                    pass
+                    
             try:
-                response = model.generate_content(prompt).text
+                response = model.generate_content(prompt_content).text
                 st.session_state.messages.append({"role": "assistant", "content": response})
                 st.rerun()
             except google.api_core.exceptions.ResourceExhausted:
                 st.error("Hệ thống AI đang quá tải một chút. Em vui lòng chờ 1 phút rồi gõ lại nhé!")
+            except Exception:
+                st.error("Hệ thống gặp gián đoạn nhỏ, em thử gõ lại câu trả lời nhé!")
